@@ -1,35 +1,26 @@
-# The threat and trust model for confidential container
+# Trust and and threat model Analysis for confidential containers
 
 ---
 
 ## Motivation
 
-Confidential Computing Consortium (CCC) defines the threat model for confidential
-computing[1: 5 Threat Model]. Confidential container is a specific use case of confidential
-computing for the cloud native scenario. Therefore, the threat model of confidential container
-may refer to it, with the details for confidential container.
+Confidential container is an intiative to enable cloud native confidential computing to protect containers and data[1]. It is a special form of confidential computing[2] with its specific architecture, information flow, software components and stack. The trust model between users and platform owners or CSPs can be different from other forms of confidential computing. Assets and attack surfaces in such environment are different as well, which requires a seperate threat model for confidential container to address. This document discusses the trust and threat model for confientail containers with reference to the threat model for confidential computing[3: 5 Threat Model].
 
-Unfortunately, CCv0 doesn't have a clear definition for the threat model of confidential
-container. If the confidential container is going to develop in a healthy manner, it is necessary
-to define and clarify the threat model as soon as possible in order to provide guidance and
-constraint on the components and architecture in the security principle of confidential container.
-Otherwise, it is difficult to follow an unified security principle among the components composing
-the confidential container. In addition, it's easy to fall into the constant discussions and
-clarifications.
+The confidential container open source project[1] has reached a milestone of CCv0, with great contribution from the community. However, there is no clear definition of threat model for confidential containers. It becomes clear that an agreed trust model and threat modeling definition is needed as a guidance to drive the next level of architecture defintion and development. Security objective and non-objective for confidential containers should also be clear to provide the security principles for the community to address any opens or questions in architecture and component level discussion. 
+
+In the next few sections, we will start the discussion of potentially different forms of confidential container based on different hardware technologies and software stacks, and identify the one we will address in this document; then discuss the trust model and threat model for this specific confiential container.
 
 ---
 
-## The forms of confidential container
+## Types of confidential container
 
-There is a number of ways to accomplish a confidential container, such as VM-based "vm-cc",
-MicroVM-based "microvm-cc", and Intel SGX Enclave based "enclave-cc".
+The objective of confidential containers is to protect containers. There are number of ways to accomplish that, based on different technologies. They can be VM based which uses VM for isoation, or Encalve based (e.g, Intel SGX). We category them into the three following models:
 
-"vm-cc" uses a virtual machine with hardware TEE capability to run a K8s node. "microvm-cc" uses
-a MicroVM with hardware TEE capability to run a Pod. "enclave-cc" uses a SGX Enclave to run a
-LibOS.
+- VM-based ("vm-cc"). Protection is at K8S node level. Each worker node is a virtual machine running inside a trusted exuection environment (TEE) with support from hardware isolation technology (Intel SGX, AMD-SEV).
+- MicroVM-based ("microvm-cc"). Protection is at Pod level. Each pod is running inside a MicroVM running inside TEE.
+- Enclave based ("enclave-cc"). Protection is at pod level. Each pod runs inside an enclave (e.g., Intel SGX).
 
-The commonality of these forms is to run a container inside hardware TEE. The significant
-differences among them are as following:
+Regardless of the difference, These different forms of confidential container is to run a container inside a hardware TEE. The following table compares these different technologies.
 
 | | vm-cc | microvm-cc/kata-cc\*1 | enclave-cc |
 | :-: | :-: | :-: | :-: |
@@ -39,29 +30,28 @@ differences among them are as following:
 | Deployment complexity | High | Low | Medium |
 | Implementation difficulty | Low | High | Medium |
 
-Note:
-1. This doc may use kata-cc equivalent to microvm-cc in order to refer to a kata-specific component.
-2. Here refers to the trust boundary of control plane.
-3. A component used in kata and running in POD.
+In this document, we also refer "microvm-cc" interchangable as "Kata-cc" in the context of confidential containers using Kata architecture.
 
-The scope of this doc is limited to vm-cc and microvm-cc/kata-cc.
+Note (I don't quite get the meaning of follwing two - Haidong)
+1. Here refers to the trust boundary of control plane.
+2. A component used in kata and running in POD.
+
+The scope of this doc is limited to vm-cc (?) and microvm-cc (kata-cc).
 
 ---
 
-## Execution stages
+## Confidential container lifecycle
 
-The life cycle of confidential container can be roughly divided into 3 execution stages:
+Before the threat model is discussed, it is better to understand the life cycle of confidential container, which can be roughly divided into 3 execution stages:
 
-- Pre-container stage: occurs before pulling container image. This stage contains the build and
-initialization of TEEs. The involved components include the ones that directly associated with the
-protections that TEEs provide (e.g, tdx seam-loader, tdx module, psp/sev firmware and so on),
-Pre-OS (e.g, guest firmware, guest kernel, initrd and so on) and specific components (e.g,
-kata-agent, attestation-agent and so on).
+- Pre-launch stage: It is the stage where the environment is prepared to run a container before container image is pulled. This stage contains the build and
+initialization of TEEs. The involved components include necessary platform components each TEE needs (e.g., tdx seam-loader, tdx module, psp/sev firmware, etc.),
+guest boot components (e.g, guest firmware, guest kernel, initrd, etc.) and kata specific components supporting confidential computing (e.g.,
+kata-agent, attestation-agent, etc.).
 
-- Container launch stage: refers to the procedure of image pulling, unpacking and launching.
+- Launch stage: This refers to the stage where container image is pulled, decryption key fetch (in case of image encryption), iamge unpacked, and instance is launched.
 
-- Workload operation stage: refers to the procedure since the workload in the container starts to
-run in TEEs.
+- Post-launch/Running stage: This refers to the stage where the workload in the container starts to execute in TEE.
 
 These three execution stages are sufficient to describe the execution of any forms of confidential
 container. Therefore, the following discussions about the threat model of confidential container
@@ -69,11 +59,11 @@ will focus on them.
 
 ---
 
-## Goals and not-goals
+## Security objectives and non-objectives
 
-### Goals
+### Objectives
 
-The commonality of goals between confidential container and confidential computing are to reduce
+The common goal of both confidential container and confidential computing is to reduce
 the ability for the platform owner, operator and attacker to access data and code inside TEEs
 sufficiently such that this path is not an economically or logically viable attack during
 execution[1: 5.1 Goal].
@@ -81,23 +71,23 @@ execution[1: 5.1 Goal].
 Around the three execution stages of confidential container, the scope of the threat model of
 confidential container includes:
 
-- Pre-container stage
+- Pre-launch stage
   - Measure the TEE where confidential containers run, and store the measurements to a secure location.
 
-- Container launch stage
+- launch stage
   - Measure and attest the TEE where confidential containers run to prove the deployment and initialization of pre-container are valid and expected;
   - Pull the encrypted and signed container image in TEE;
   - Provision the runtime configurations through a secure and attested control plane with the protections of confidentiality and integrity.
 
-- Workload operation stage
+- Post-lanuch/running stage
   - Provide the protections of confidentiality and integrity for the storage and transport of data derived from TEE outside the TEE instance;
   - Keep the dynamic measurement of TEE where confidential containers run, and store the measurements to a secure location;
   - Continuously launch the runtime attestations for TEE where confidential containers run according to the policy to ensure the TEEs are not comprised or out-of-date;
   - Migration of confidential containers between TEE instances in a secure manner.
 
-### Not-goals
+### Non-objectives
 
-The following itesm are considered out-of-scope for the threat model of confidential container: 
+The following items are considered out-of-scope for the threat model of confidential container: 
 
 - The assurance of protections for application itself.
 
@@ -132,18 +122,18 @@ occur[2: Defining Trust Modeling].
 As for the confidential container, the TEE running the confidential container needs to provide a
 reliable manner of measurement across the life cycle of a confidential container. In the following
 attestation procedure, the attestation service fully verifies the validity of TEE measurements.
-The real purpose is to persuade the tenant to believe that the workload in the confidential
+The real purpose is to demonstrate to the tenant that the workload in the confidential
 container is running in a verified and genuine TEE. In summary: the trust model of confidential
 container needs to address the trustworthiness of TEE.
 
 The trust model of confidential container closely focuses on the establishment and extension
 procedure of chain of trust, which covers the above three execution stages:
 
-- Pre-container stage: create and extend the chain of trust, that is, how to create and initialize a TEE in a secure manner, including using measured boot and / or secure boot during pre-container bootstrap.
+- Pre-launch stage: create and extend the chain of trust, that is, how to create and initialize a TEE in a secure manner, including using measured boot and / or secure boot during pre-container bootstrap.
 
 - Container launch stage: the chain of trust continues to extend to the container image, that is, how to ensure image pulling, unpacking and launching in a secure manner.
 
-- Workload operation stage: the chain of trust continues to extend to the workload, that is, how to ensure the  workload, derived data and incoming data are protected and verified in a secure manner.
+- Post-launch/running stage: the chain of trust continues to extend to the workload, that is, how to ensure the  workload, derived data and incoming data are protected and verified in a secure manner.
 
 There are many ways for actors in the ecosystem who rely on the security guarantees of a TEE to
 establish trust in the TEE. This is the so-called trust policy. One trust policy is to obtain
@@ -197,7 +187,8 @@ allow the tenant to select different trust policy used in an execution stage. 
 ---
 
 ## Reference
-
-- [1] [A Technical Analysis of Confidential Computing v1.1](https://confidentialcomputing.io/wp-content/uploads/sites/85/2021/03/CCC-Tech-Analysis-Confidential-Computing-V1.pdf)
-- [2] [Trust Modeling for Security Architecture Development](https://www.informit.com/articles/article.aspx?p=31546)
-- [3] https://en.wikipedia.org/wiki/Trust_boundary
+- [1] [Confidential Containers](https://github.com/confidential-containers)
+- [2] [Confidential Computing](https://confidentialcomputing.io/)
+- [3] [A Technical Analysis of Confidential Computing v1.1](https://confidentialcomputing.io/wp-content/uploads/sites/85/2021/03/CCC-Tech-Analysis-Confidential-Computing-V1.pdf)
+- [4] [Trust Modeling for Security Architecture Development](https://www.informit.com/articles/article.aspx?p=31546)
+- [5] https://en.wikipedia.org/wiki/Trust_boundary
